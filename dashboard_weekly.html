@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Card Transactions Dashboard — Weekly</title>
+<style>
+  .viz-root {
+    --page:            #f9f9f7;
+    --surface-1:       #fcfcfb;
+    --text-primary:    #0b0b0b;
+    --text-secondary:  #52514e;
+    --text-muted:      #898781;
+    --gridline:        #e1e0d9;
+    --baseline:        #c3c2b7;
+    --border:          rgba(11,11,11,0.10);
+    --series-1:        #2a78d6; /* FC Barcelona Visa */
+    --series-2:        #1baf7a; /* Petronas Gold */
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .viz-root { padding: 28px 32px 48px; max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 2px; }
+  .subtitle { color: var(--text-secondary); font-size: 13.5px; margin: 0 0 24px; }
+
+  .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .kpi-tile {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .kpi-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+  .kpi-value { font-size: 24px; font-weight: 600; }
+  .kpi-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 22px 12px; margin-bottom: 20px;
+  }
+  .card-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 4px;}
+  .card-title { font-size: 15px; font-weight: 600; }
+  .card-note { font-size: 12.5px; color: var(--text-secondary); margin: 0 0 14px; }
+
+  .legend { display: flex; gap: 18px; align-items: center; font-size: 12.5px; color: var(--text-secondary); }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+  #chartWrap { position: relative; width: 100%; }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .bar-hit { fill: transparent; cursor: pointer; }
+  .bar-seg { transition: filter 0.1s ease; }
+  .bar-seg.hover { filter: brightness(1.12); }
+  .value-label { fill: var(--text-secondary); font-size: 11px; font-weight: 600; font-family: system-ui, sans-serif; }
+  .axis-label { fill: var(--text-muted); font-size: 11px; font-family: system-ui, sans-serif; }
+  .grid-line { stroke: var(--gridline); stroke-width: 1; }
+  .baseline-line { stroke: var(--baseline); stroke-width: 1; }
+
+  .tooltip {
+    position: absolute; pointer-events: none; z-index: 10;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; font-size: 12.5px; box-shadow: 0 4px 16px rgba(0,0,0,0.14);
+    min-width: 190px; opacity: 0; transform: translateY(4px);
+    transition: opacity 0.1s ease, transform 0.1s ease;
+  }
+  .tooltip.show { opacity: 1; transform: translateY(0); }
+  .tooltip-date { font-weight: 600; margin-bottom: 6px; }
+  .tooltip-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 2px 0; }
+  .tooltip-key { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+  .tooltip-line { width: 10px; height: 2px; border-radius: 1px; display: inline-block; }
+  .tooltip-val { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .tooltip-total { border-top: 1px solid var(--gridline); margin-top: 6px; padding-top: 6px; font-weight: 600; display:flex; justify-content: space-between; }
+
+  .filter-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  select, input[type="text"] {
+    font-family: inherit; font-size: 13px; color: var(--text-primary);
+    background: var(--page); border: 1px solid var(--border); border-radius: 7px;
+    padding: 7px 10px; outline: none;
+  }
+  select:focus, input[type="text"]:focus { border-color: var(--series-1); }
+  input[type="text"] { min-width: 220px; }
+  .result-count { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    text-align: left; font-weight: 600; color: var(--text-secondary); font-size: 11.5px;
+    text-transform: uppercase; letter-spacing: 0.03em;
+    padding: 8px 10px; border-bottom: 1px solid var(--gridline); cursor: pointer; user-select: none;
+    white-space: nowrap;
+  }
+  thead th.num, td.num { text-align: right; }
+  thead th .arrow { color: var(--text-muted); font-size: 10px; margin-left: 3px; }
+  tbody td { padding: 8px 10px; border-bottom: 1px solid var(--gridline); vertical-align: middle; }
+  tbody tr:hover { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
+  .amount { font-variant-numeric: tabular-nums; }
+  .badge-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 7px; flex: none; }
+  .card-cell { display: flex; align-items: center; white-space: nowrap; }
+  .type-pill {
+    font-size: 11px; padding: 2px 7px; border-radius: 20px; border: 1px solid var(--gridline);
+    color: var(--text-secondary); white-space: nowrap;
+  }
+  .desc-cell { color: var(--text-primary); }
+  .no-results { text-align: center; padding: 28px; color: var(--text-muted); }
+
+  .week-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 4px; }
+  .week-table th, .week-table td { padding: 8px 10px; border-bottom: 1px solid var(--gridline); }
+  .week-table th { text-align: right; color: var(--text-secondary); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.03em; }
+  .week-table th:first-child, .week-table td:first-child { text-align: left; }
+  .week-table td { text-align: right; font-variant-numeric: tabular-nums; }
+  .week-table td:first-child { font-variant-numeric: normal; }
+
+  @media (max-width: 760px) {
+    .kpi-row { grid-template-columns: repeat(2, 1fr); }
+    input[type="text"] { min-width: 140px; }
+  }
+</style>
+</head>
+<body>
+<div class="viz-root">
+  <h1>Card Transactions Dashboard — Weekly</h1>
+  <p class="subtitle">Maybank statement · 17 May – 16 Jun 2026 (by transaction date) · YAP CHEE HOE</p>
+
+  <div class="kpi-row" id="kpiRow"></div>
+
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Weekly card spend</div>
+      </div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <p class="card-note">Purchase transactions only (payments &amp; the cash rebate excluded) &middot; grouped by calendar week, Mon&ndash;Sun &middot; first &amp; last weeks are partial &middot; hover a bar for the breakdown</p>
+    <div id="chartWrap">
+      <svg id="chart"></svg>
+      <div class="tooltip" id="tooltip"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" style="margin-bottom:10px;">Spend by week &amp; card</div>
+    <table class="week-table" id="weekTable"></table>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div class="card-title">All transactions</div></div>
+    <div class="filter-row">
+      <select id="cardFilter">
+        <option value="all">All cards</option>
+      </select>
+      <select id="typeFilter">
+        <option value="all">All types</option>
+        <option value="Debit">Purchases (debit)</option>
+        <option value="Credit">Payments &amp; credits</option>
+      </select>
+      <input type="text" id="searchBox" placeholder="Search description…">
+      <span class="result-count" id="resultCount"></span>
+    </div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th data-key="date">Date <span class="arrow"></span></th>
+            <th data-key="card">Card <span class="arrow"></span></th>
+            <th data-key="desc">Description <span class="arrow"></span></th>
+            <th data-key="type">Type <span class="arrow"></span></th>
+            <th class="num" data-key="amount">Amount (RM) <span class="arrow"></span></th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+      <div class="no-results" id="noResults" style="display:none;">No transactions match your filters.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const TRANSACTIONS = [{"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-05-23", "date": "2026-05-23", "desc": "NAK NAK-IMD PETALING JAYA MY", "amount": 64.0, "type": "Debit"}, {"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-05-24", "date": "2026-05-23", "desc": "Uniqlo TG Selangor MY", "amount": 174.5, "type": "Debit"}, {"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-05-27", "date": "2026-05-27", "desc": "Uniqlo Da Square Kuala Lumpur MY", "amount": 154.8, "type": "Debit"}, {"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-05-29", "date": "2026-05-28", "desc": "BURGER KING SL 3 DAMANSAR SELANGOR MY", "amount": 13.9, "type": "Debit"}, {"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-05-30", "date": "2026-05-30", "desc": "PYMT@MAYBANK2U.COM", "amount": -1803.16, "type": "Credit"}, {"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-05-31", "date": "2026-05-30", "desc": "RST COR BLIMEYL BRTSH-PJ SELANGOR MY", "amount": 218.0, "type": "Debit"}, {"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-06-01", "date": "2026-06-01", "desc": "ALL IT HYPERMARKET S/B KUALA LUMPUR MY", "amount": 69.0, "type": "Debit"}, {"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-06-01", "date": "2026-06-01", "desc": "SHELL-REZA SERVICE K.LUMPUR MY", "amount": 32.96, "type": "Debit"}, {"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-06-01", "date": "2026-05-31", "desc": "CASH REBATE", "amount": -21.26, "type": "Credit"}, {"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-06-02", "date": "2026-06-02", "desc": "AEON SMKT-METRO PRIMA KUALA LUMPUR MY", "amount": 105.4, "type": "Debit"}, {"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-06-02", "date": "2026-06-01", "desc": "BURGER KING KL LOTUS'S BK KUALA LUMPUR MY", "amount": 20.4, "type": "Debit"}, {"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-06-03", "date": "2026-06-02", "desc": "PIKO SUSHI KEPONG MY", "amount": 61.9, "type": "Debit"}, {"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-06-03", "date": "2026-06-02", "desc": "DAISO METRO PRIMA KUALA LUMPUR MY", "amount": 47.2, "type": "Debit"}, {"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-06-05", "date": "2026-06-05", "desc": "SHELL-REZA SERVICE K.LUMPUR MY", "amount": 88.59, "type": "Debit"}, {"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-06-07", "date": "2026-06-07", "desc": "AEON SMKT-METRO PRIMA KUALA LUMPUR MY", "amount": 39.8, "type": "Debit"}, {"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-06-07", "date": "2026-06-07", "desc": "SHELL-REZA SERVICE K.LUMPUR MY", "amount": 31.42, "type": "Debit"}, {"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-06-08", "date": "2026-06-07", "desc": "PIKO SUSHI KEPONG MY", "amount": 105.3, "type": "Debit"}, {"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-06-12", "date": "2026-06-11", "desc": "MCDONALD'S-PETRON N KIARA KUALA LUMPUR MY", "amount": 46.25, "type": "Debit"}, {"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-06-14", "date": "2026-06-14", "desc": "TFM-IOI MALL DAMANSARA PETALING JAYA MY", "amount": 30.7, "type": "Debit"}, {"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-06-14", "date": "2026-06-14", "desc": "NAK NAK-IMD PETALING JAYA MY", "amount": 40.0, "type": "Debit"}, {"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-06-14", "date": "2026-06-14", "desc": "TFM-IOI MALL DAMANSARA PETALING JAYA MY", "amount": 57.15, "type": "Debit"}, {"card": "FC Barcelona Visa", "cardNo": "4842 8107 3226 6750", "posting": "2026-06-17", "date": "2026-06-16", "desc": "QRA SDN BHD-THE FIVE KUALA LUMPUR MY", "amount": 52.8, "type": "Debit"}, {"card": "Petronas Gold", "cardNo": "4966 2302 3019 5023", "posting": "2026-05-19", "date": "2026-05-19", "desc": "LAZADA MY-EC-E12 :011/012", "amount": 191.18, "type": "Debit"}, {"card": "Petronas Gold", "cardNo": "4966 2302 3019 5023", "posting": "2026-05-19", "date": "2026-05-19", "desc": "DIRECTD RETAIL-E12 :008/012", "amount": 167.92, "type": "Debit"}, {"card": "Petronas Gold", "cardNo": "4966 2302 3019 5023", "posting": "2026-05-19", "date": "2026-05-19", "desc": "SONY (MALAYSIA)-EC-E6 :003/006", "amount": 235.83, "type": "Debit"}, {"card": "Petronas Gold", "cardNo": "4966 2302 3019 5023", "posting": "2026-05-19", "date": "2026-05-17", "desc": "Shopee MY Marketplace Kuala Lumpur MY", "amount": 74.0, "type": "Debit"}, {"card": "Petronas Gold", "cardNo": "4966 2302 3019 5023", "posting": "2026-05-21", "date": "2026-05-20", "desc": "NVCKL SBMC-RPS KUALA LUMPUR MY", "amount": 314.0, "type": "Debit"}, {"card": "Petronas Gold", "cardNo": "4966 2302 3019 5023", "posting": "2026-05-25", "date": "2026-05-24", "desc": "LAZADA KUALA LUMPUR MY", "amount": 55.79, "type": "Debit"}, {"card": "Petronas Gold", "cardNo": "4966 2302 3019 5023", "posting": "2026-05-29", "date": "2026-05-28", "desc": "SBC DISTRIBUTION (PJ) PETALING JAYA MY", "amount": 1308.0, "type": "Debit"}, {"card": "Petronas Gold", "cardNo": "4966 2302 3019 5023", "posting": "2026-05-30", "date": "2026-05-30", "desc": "PYMT@MAYBANK2U.COM", "amount": -3460.32, "type": "Credit"}, {"card": "Petronas Gold", "cardNo": "4966 2302 3019 5023", "posting": "2026-06-01", "date": "2026-05-31", "desc": "WARGAMING_ASIA 35722864444 CY", "amount": 241.75, "type": "Debit"}, {"card": "Petronas Gold", "cardNo": "4966 2302 3019 5023", "posting": "2026-06-03", "date": "2026-06-03", "desc": "PYMT@MAYBANK2U.COM", "amount": -1300.0, "type": "Credit"}, {"card": "Petronas Gold", "cardNo": "4966 2302 3019 5023", "posting": "2026-06-05", "date": "2026-06-05", "desc": "SP PLAUD.AI SG WAN CHAI HK", "amount": 809.0, "type": "Debit"}, {"card": "Petronas Gold", "cardNo": "4966 2302 3019 5023", "posting": "2026-06-06", "date": "2026-06-05", "desc": "LAZADA KUALA LUMPUR MY", "amount": 289.0, "type": "Debit"}, {"card": "Petronas Gold", "cardNo": "4966 2302 3019 5023", "posting": "2026-06-09", "date": "2026-06-07", "desc": "LAZADA KUALA LUMPUR MY", "amount": 152.92, "type": "Debit"}, {"card": "Petronas Gold", "cardNo": "4966 2302 3019 5023", "posting": "2026-06-10", "date": "2026-06-10", "desc": "ALL IT HYPERMARKET S/B KUALA LUMPUR MY", "amount": 869.0, "type": "Debit"}, {"card": "Petronas Gold", "cardNo": "4966 2302 3019 5023", "posting": "2026-06-12", "date": "2026-06-11", "desc": "LEAD BY UCAN TECH JOHOR BAHRU MY", "amount": 734.4, "type": "Debit"}, {"card": "Petronas Gold", "cardNo": "4966 2302 3019 5023", "posting": "2026-06-15", "date": "2026-06-14", "desc": "TIMEDOTCOM SHAH ALAM MY", "amount": 211.45, "type": "Debit"}, {"card": "Petronas Gold", "cardNo": "4966 2302 3019 5023", "posting": "2026-06-18", "date": "2026-06-16", "desc": "Shopee MY Marketplace KualaLumpur MY", "amount": 608.24, "type": "Debit"}]
+;
+
+const CARD_COLOR = {
+  "FC Barcelona Visa": "var(--series-1)",
+  "Petronas Gold": "var(--series-2)"
+};
+const CARD_ORDER = ["FC Barcelona Visa", "Petronas Gold"];
+
+function fmt(n) {
+  return n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtShort(n) {
+  if (Math.abs(n) >= 1000) return (n/1000).toFixed(2) + 'K';
+  return fmt(n);
+}
+function fmtDate(iso) {
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+}
+function fmtDateFull(iso) {
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+}
+function weekStart(iso) {
+  const d = new Date(iso + "T00:00:00");
+  const day = (d.getDay() + 6) % 7; // Mon=0..Sun=6
+  d.setDate(d.getDate() - day);
+  return d.toISOString().slice(0, 10);
+}
+function weekEnd(startIso) {
+  const d = new Date(startIso + "T00:00:00");
+  d.setDate(d.getDate() + 6);
+  return d.toISOString().slice(0, 10);
+}
+function weekLabel(startIso) {
+  const s = new Date(startIso + "T00:00:00");
+  const e = new Date(weekEnd(startIso) + "T00:00:00");
+  const sameMonth = s.getMonth() === e.getMonth();
+  const sOpt = sameMonth ? { day: 'numeric' } : { day: 'numeric', month: 'short' };
+  return s.toLocaleDateString('en-GB', sOpt) + '–' + e.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+// ---------- KPI tiles ----------
+const debitRows = TRANSACTIONS.filter(r => r.type === "Debit");
+const creditRows = TRANSACTIONS.filter(r => r.type === "Credit");
+const totalSpend = debitRows.reduce((s, r) => s + r.amount, 0);
+const totalCredits = creditRows.reduce((s, r) => s + Math.abs(r.amount), 0);
+const activeWeeks = new Set(debitRows.map(r => weekStart(r.date))).size;
+const avgPerWeek = totalSpend / activeWeeks;
+
+const kpis = [
+  { label: "Total spend", value: `RM ${fmt(totalSpend)}`, sub: `${debitRows.length} purchases` },
+  { label: "Payments & credits", value: `RM ${fmt(totalCredits)}`, sub: `${creditRows.length} entries` },
+  { label: "Total transactions", value: TRANSACTIONS.length, sub: "across 2 cards" },
+  { label: "Avg spend / week", value: `RM ${fmt(avgPerWeek)}`, sub: `${activeWeeks} weeks with purchases` },
+];
+document.getElementById('kpiRow').innerHTML = kpis.map(k => `
+  <div class="kpi-tile">
+    <div class="kpi-label">${k.label}</div>
+    <div class="kpi-value">${k.value}</div>
+    <div class="kpi-sub">${k.sub}</div>
+  </div>
+`).join('');
+
+// ---------- Legend ----------
+document.getElementById('legend').innerHTML = CARD_ORDER.map(c => `
+  <span class="legend-item"><span class="legend-swatch" style="background:${CARD_COLOR[c]}"></span>${c}</span>
+`).join('');
+
+// ---------- Build weekly series (debit only) ----------
+const weekSet = new Set(debitRows.map(r => weekStart(r.date)));
+const weeks = Array.from(weekSet).sort();
+
+const byWeek = {};
+weeks.forEach(w => byWeek[w] = { "FC Barcelona Visa": 0, "Petronas Gold": 0 });
+debitRows.forEach(r => { byWeek[weekStart(r.date)][r.card] += r.amount; });
+
+const weekTxns = {};
+weeks.forEach(w => weekTxns[w] = []);
+debitRows.forEach(r => weekTxns[weekStart(r.date)].push(r));
+
+// ---------- Draw chart ----------
+const svg = document.getElementById('chart');
+const tooltip = document.getElementById('tooltip');
+const chartWrap = document.getElementById('chartWrap');
+
+const W = 1100, H = 320;
+const marginL = 56, marginR = 8, marginT = 16, marginB = 30;
+const plotW = W - marginL - marginR;
+const plotH = H - marginT - marginB;
+
+const maxTotal = Math.max(...weeks.map(w => byWeek[w]["FC Barcelona Visa"] + byWeek[w]["Petronas Gold"]));
+function niceMax(v) {
+  const steps = [200, 500, 1000, 1500, 2000, 2500, 3000, 4000, 5000];
+  for (const s of steps) if (Math.ceil(v / s) * s >= v && Math.ceil(v/s)*s <= v*1.5) return Math.ceil(v / s) * s;
+  return Math.ceil(v / 500) * 500;
+}
+const yMax = niceMax(maxTotal || 100);
+
+const band = plotW / weeks.length;
+const barW = Math.min(72, band * 0.42);
+const gap = 2;
+
+svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+function y(v) { return marginT + plotH - (v / yMax) * plotH; }
+function x(i) { return marginL + i * band + (band - barW) / 2; }
+
+let svgHTML = '';
+
+const gridSteps = 4;
+for (let i = 0; i <= gridSteps; i++) {
+  const v = (yMax / gridSteps) * i;
+  const yy = y(v);
+  svgHTML += `<line class="grid-line" x1="${marginL}" x2="${W - marginR}" y1="${yy}" y2="${yy}"></line>`;
+  svgHTML += `<text class="axis-label" x="${marginL - 10}" y="${yy + 3}" text-anchor="end">${Math.round(v).toLocaleString()}</text>`;
+}
+svgHTML += `<line class="baseline-line" x1="${marginL}" x2="${W - marginR}" y1="${y(0)}" y2="${y(0)}"></line>`;
+
+weeks.forEach((w, i) => {
+  svgHTML += `<text class="axis-label" x="${x(i) + barW/2}" y="${H - 8}" text-anchor="middle">${weekLabel(w)}</text>`;
+});
+
+// bars (stacked: card1 bottom, card2 top, 2px gap) + total value label at cap
+weeks.forEach((w, i) => {
+  const v1 = byWeek[w]["FC Barcelona Visa"];
+  const v2 = byWeek[w]["Petronas Gold"];
+  const total = v1 + v2;
+  const bx = x(i);
+  let cursorY = y(0);
+
+  if (v1 > 0) {
+    const h1 = (v1 / yMax) * plotH;
+    const topY = cursorY - h1;
+    svgHTML += `<rect class="bar-seg" data-week="${w}" data-series="FC Barcelona Visa" x="${bx}" y="${topY}" width="${barW}" height="${h1}" rx="4" ry="4" style="fill:${CARD_COLOR['FC Barcelona Visa']}"></rect>`;
+    cursorY = topY - (v2 > 0 ? gap : 0);
+  }
+  let capY = cursorY;
+  if (v2 > 0) {
+    const h2 = (v2 / yMax) * plotH;
+    const topY = cursorY - h2;
+    svgHTML += `<rect class="bar-seg" data-week="${w}" data-series="Petronas Gold" x="${bx}" y="${topY}" width="${barW}" height="${h2}" rx="4" ry="4" style="fill:${CARD_COLOR['Petronas Gold']}"></rect>`;
+    capY = topY;
+  }
+  svgHTML += `<text class="value-label" x="${bx + barW/2}" y="${capY - 8}" text-anchor="middle">RM ${fmtShort(total)}</text>`;
+  svgHTML += `<rect class="bar-hit" data-week="${w}" tabindex="0" x="${marginL + i*band}" y="${marginT}" width="${band}" height="${plotH}"></rect>`;
+});
+
+svg.innerHTML = svgHTML;
+
+function showTooltip(week, evtX, evtY) {
+  const rows = weekTxns[week];
+  const v1 = byWeek[week]["FC Barcelona Visa"];
+  const v2 = byWeek[week]["Petronas Gold"];
+  const total = v1 + v2;
+  tooltip.innerHTML = '';
+  const dateEl = document.createElement('div');
+  dateEl.className = 'tooltip-date';
+  dateEl.textContent = 'Week of ' + weekLabel(week);
+  tooltip.appendChild(dateEl);
+
+  [["FC Barcelona Visa", v1], ["Petronas Gold", v2]].forEach(([name, val]) => {
+    if (val <= 0) return;
+    const row = document.createElement('div');
+    row.className = 'tooltip-row';
+    const key = document.createElement('span');
+    key.className = 'tooltip-key';
+    const line = document.createElement('span');
+    line.className = 'tooltip-line';
+    line.style.background = CARD_COLOR[name];
+    key.appendChild(line);
+    const label = document.createElement('span');
+    label.textContent = name;
+    key.appendChild(label);
+    const val_ = document.createElement('span');
+    val_.className = 'tooltip-val';
+    val_.textContent = 'RM ' + fmt(val);
+    row.appendChild(key);
+    row.appendChild(val_);
+    tooltip.appendChild(row);
+  });
+
+  const totalRow = document.createElement('div');
+  totalRow.className = 'tooltip-total';
+  const totalLabel = document.createElement('span');
+  totalLabel.textContent = `Total (${rows.length} txn${rows.length !== 1 ? 's' : ''})`;
+  const totalVal = document.createElement('span');
+  totalVal.textContent = 'RM ' + fmt(total);
+  totalRow.appendChild(totalLabel);
+  totalRow.appendChild(totalVal);
+  tooltip.appendChild(totalRow);
+
+  tooltip.classList.add('show');
+  const wrapRect = chartWrap.getBoundingClientRect();
+  let left = evtX - wrapRect.left + 14;
+  let top = evtY - wrapRect.top - 10;
+  if (left + 210 > wrapRect.width) left = evtX - wrapRect.left - 220;
+  tooltip.style.left = left + 'px';
+  tooltip.style.top = Math.max(0, top) + 'px';
+}
+function hideTooltip() { tooltip.classList.remove('show'); }
+
+svg.querySelectorAll('.bar-hit').forEach(el => {
+  const week = el.getAttribute('data-week');
+  el.addEventListener('pointermove', (e) => showTooltip(week, e.clientX, e.clientY));
+  el.addEventListener('pointerenter', () => {
+    svg.querySelectorAll(`.bar-seg[data-week="${week}"]`).forEach(b => b.classList.add('hover'));
+  });
+  el.addEventListener('pointerleave', () => {
+    svg.querySelectorAll(`.bar-seg[data-week="${week}"]`).forEach(b => b.classList.remove('hover'));
+    hideTooltip();
+  });
+  el.addEventListener('focus', (e) => {
+    const rect = el.getBoundingClientRect();
+    showTooltip(week, rect.left + rect.width/2, rect.top);
+    svg.querySelectorAll(`.bar-seg[data-week="${week}"]`).forEach(b => b.classList.add('hover'));
+  });
+  el.addEventListener('blur', () => {
+    svg.querySelectorAll(`.bar-seg[data-week="${week}"]`).forEach(b => b.classList.remove('hover'));
+    hideTooltip();
+  });
+});
+
+// ---------- Week summary table ----------
+const weekTableEl = document.getElementById('weekTable');
+let wt = '<thead><tr><th>Week</th><th>FC Barcelona Visa (RM)</th><th>Petronas Gold (RM)</th><th>Total (RM)</th></tr></thead><tbody>';
+weeks.forEach(w => {
+  const v1 = byWeek[w]["FC Barcelona Visa"];
+  const v2 = byWeek[w]["Petronas Gold"];
+  wt += `<tr><td>${weekLabel(w)}</td><td>${fmt(v1)}</td><td>${fmt(v2)}</td><td><strong>${fmt(v1+v2)}</strong></td></tr>`;
+});
+wt += `<tr><td><strong>Total</strong></td><td><strong>${fmt(debitRows.filter(r=>r.card==="FC Barcelona Visa").reduce((s,r)=>s+r.amount,0))}</strong></td><td><strong>${fmt(debitRows.filter(r=>r.card==="Petronas Gold").reduce((s,r)=>s+r.amount,0))}</strong></td><td><strong>${fmt(totalSpend)}</strong></td></tr>`;
+wt += '</tbody>';
+weekTableEl.innerHTML = wt;
+
+// ---------- Transactions Table ----------
+const cardFilter = document.getElementById('cardFilter');
+CARD_ORDER.forEach(c => {
+  const opt = document.createElement('option');
+  opt.value = c; opt.textContent = c;
+  cardFilter.appendChild(opt);
+});
+const typeFilter = document.getElementById('typeFilter');
+const searchBox = document.getElementById('searchBox');
+const tableBody = document.getElementById('tableBody');
+const resultCount = document.getElementById('resultCount');
+const noResults = document.getElementById('noResults');
+
+let sortKey = 'date', sortDir = -1;
+
+function renderTable() {
+  let rows = TRANSACTIONS.slice();
+  if (cardFilter.value !== 'all') rows = rows.filter(r => r.card === cardFilter.value);
+  if (typeFilter.value !== 'all') rows = rows.filter(r => r.type === typeFilter.value);
+  const q = searchBox.value.trim().toLowerCase();
+  if (q) rows = rows.filter(r => r.desc.toLowerCase().includes(q));
+
+  rows.sort((a, b) => {
+    let av = a[sortKey], bv = b[sortKey];
+    if (sortKey === 'amount') { av = a.amount; bv = b.amount; }
+    if (av < bv) return -1 * sortDir;
+    if (av > bv) return 1 * sortDir;
+    return 0;
+  });
+
+  resultCount.textContent = `${rows.length} of ${TRANSACTIONS.length} transactions`;
+  tableBody.innerHTML = '';
+  noResults.style.display = rows.length ? 'none' : 'block';
+
+  rows.forEach(r => {
+    const tr = document.createElement('tr');
+
+    const tdDate = document.createElement('td');
+    tdDate.textContent = fmtDate(r.date);
+    tr.appendChild(tdDate);
+
+    const tdCard = document.createElement('td');
+    const cardCell = document.createElement('span');
+    cardCell.className = 'card-cell';
+    const dot = document.createElement('span');
+    dot.className = 'badge-dot';
+    dot.style.background = CARD_COLOR[r.card];
+    cardCell.appendChild(dot);
+    const cardText = document.createElement('span');
+    cardText.textContent = r.card;
+    cardCell.appendChild(cardText);
+    tdCard.appendChild(cardCell);
+    tr.appendChild(tdCard);
+
+    const tdDesc = document.createElement('td');
+    tdDesc.className = 'desc-cell';
+    tdDesc.textContent = r.desc;
+    tr.appendChild(tdDesc);
+
+    const tdType = document.createElement('td');
+    const pill = document.createElement('span');
+    pill.className = 'type-pill';
+    pill.textContent = r.type === 'Debit' ? 'Purchase' : 'Payment/Credit';
+    tdType.appendChild(pill);
+    tr.appendChild(tdType);
+
+    const tdAmt = document.createElement('td');
+    tdAmt.className = 'num amount';
+    tdAmt.textContent = (r.amount < 0 ? '-RM ' : 'RM ') + fmt(Math.abs(r.amount));
+    tr.appendChild(tdAmt);
+
+    tableBody.appendChild(tr);
+  });
+}
+
+document.querySelectorAll('thead th[data-key]').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.getAttribute('data-key');
+    if (sortKey === key) { sortDir *= -1; } else { sortKey = key; sortDir = key === 'date' ? -1 : 1; }
+    document.querySelectorAll('thead th .arrow').forEach(a => a.textContent = '');
+    th.querySelector('.arrow').textContent = sortDir === 1 ? '▲' : '▼';
+    renderTable();
+  });
+});
+
+cardFilter.addEventListener('change', renderTable);
+typeFilter.addEventListener('change', renderTable);
+searchBox.addEventListener('input', renderTable);
+
+renderTable();
+</script>
+</body>
+</html>
